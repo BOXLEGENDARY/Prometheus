@@ -76,12 +76,17 @@ To update to the latest release:
 prometheus-lua update
 ```
 
+To uninstall:
+```bash
+rm -f ~/.local/bin/prometheus-lua && rm -rf ~/.local/share/prometheus-lua
+```
+
 ### Local source usage
 
 ```bash
 git clone https://github.com/prometheus-lua/Prometheus.git
 cd Prometheus
-./prometheus-lua --preset Medium ./your_file.lua
+lua cli.lua --preset Medium ./your_file.lua
 ```
 
 ---
