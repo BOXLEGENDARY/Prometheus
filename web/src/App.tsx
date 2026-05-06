@@ -1,5 +1,5 @@
-import { Check, Copy, Download, FileCode2, Loader2, Play, RotateCcw } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { CodeEditor } from "@/components/CodeEditor"
@@ -57,7 +57,7 @@ function formatWorkerError(event: ErrorEvent): string {
 export default function App() {
   const [source, setSource] = useState(initialSource)
   const [output, setOutput] = useState("")
-  const [preset, setPreset] = useState<PresetName>("Minify")
+  const [preset, setPreset] = useState<PresetName>("Medium")
   const [luaVersion, setLuaVersion] = useState<LuaVersion>("Lua51")
   const [prettyPrint, setPrettyPrint] = useState(false)
   const [seed, setSeed] = useState(createSeed)
@@ -134,16 +134,6 @@ export default function App() {
 
   const canExport = output.trim().length > 0
 
-  const status = useMemo(() => {
-    if (isRunning) {
-      return "Obfuscating"
-    }
-    if (logs.some((log) => log.level === "error")) {
-      return "Error"
-    }
-    return output ? "Ready" : "Idle"
-  }, [isRunning, logs, output])
-
   async function obfuscate() {
     let worker = workerRef.current
     const workerUrl =
@@ -211,6 +201,7 @@ export default function App() {
     setLogs(result.logs)
     if (result.ok) {
       setOutput(result.output)
+      setSeed(createSeed())
       toast.success("Obfuscation complete")
     } else {
       setOutput("")
@@ -240,12 +231,21 @@ export default function App() {
               <div>
                 <h1 className="text-lg font-semibold leading-tight">Prometheus Web</h1>
                 <p className="text-xs text-muted-foreground">
-                  In-browser Lua obfuscation powered by Prometheus by Levno_710.
+                  In-browser Lua obfuscation powered by Prometheus by levno-710.
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className="rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">{status}</span>
+              <span className="text-xs text-muted-foreground">If you like this tool, leave a star on</span>
+              <a
+                href="https://github.com/prometheus-lua/Prometheus"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                GitHub
+                <Github className="size-3.5" />
+              </a>
               <Button onClick={obfuscate} disabled={isRunning} className="min-w-32">
                 {isRunning ? <Loader2 className="animate-spin" /> : <Play />}
                 Obfuscate

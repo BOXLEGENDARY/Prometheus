@@ -3,7 +3,7 @@
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&text=Prometheus&fontAlign=50&fontAlignY=35&fontSize=42&desc=Lua%20Obfuscator%20%E2%80%A2%20AST%20Transformations%20%E2%80%A2%20Control%20Flow%20Obfuscation&descAlign=50&descAlignY=60" />
 
 <a href="https://github.com/prometheus-lua/Prometheus">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=24&duration=2500&pause=900&center=true&vCenter=true&width=760&lines=Pure+Lua+Obfuscation;AST+Transforms+%E2%80%A2+Encryption+%E2%80%A2+Anti-Tamper;Lua+5.1+and+LuaU+support;Built+for+practical+code+protection" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=24&duration=2500&pause=900&center=true&vCenter=true&width=760&lines=Pure+Lua+Obfuscation;AST+Transforms+%E2%80%A2+Encryption+%E2%80%A2+Anti-Tamper;Lua+5.1+and+LuaU+support;Built+for+code+protection" alt="Typing SVG" />
 </a>
 
 <br/>
@@ -16,9 +16,6 @@
 </a>
 <a href="https://github.com/prometheus-lua/Prometheus/stargazers">
   <img src="https://img.shields.io/github/stars/prometheus-lua/Prometheus?style=for-the-badge&logo=github&label=Stars" alt="GitHub stars" />
-</a>
-<a href="https://github.com/prometheus-lua/Prometheus">
-  <img src="https://img.shields.io/github/last-commit/prometheus-lua/Prometheus?style=for-the-badge&label=Last%20Update" alt="Last commit" />
 </a>
 <a href="https://discord.gg/U8h4d4Rf64">
   <img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord server" />
