@@ -17,9 +17,6 @@
 <a href="https://github.com/prometheus-lua/Prometheus/stargazers">
   <img src="https://img.shields.io/github/stars/prometheus-lua/Prometheus?style=for-the-badge&logo=github&label=Stars" alt="GitHub stars" />
 </a>
-<a href="https://github.com/prometheus-lua/Prometheus">
-  <img src="https://img.shields.io/github/last-commit/prometheus-lua/Prometheus?style=for-the-badge&label=Last%20Update" alt="Last commit" />
-</a>
 <a href="https://discord.gg/U8h4d4Rf64">
   <img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord server" />
 </a>
