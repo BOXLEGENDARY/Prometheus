@@ -10,6 +10,82 @@ local function script_path()
 	return str:match("(.*[/%\\])")
 end
 package.path = script_path() .. "?.lua;" .. package.path
+
+local INSTALL_SCRIPT_URL = "https://raw.githubusercontent.com/prometheus-lua/Prometheus/master/install.sh"
+
+local function run_shell(command)
+	local ok = os.execute(command)
+	if type(ok) == "number" then
+		return ok == 0
+	end
+	if type(ok) == "boolean" then
+		return ok
+	end
+	return false
+end
+
+local function get_version()
+	local version = os.getenv("PROMETHEUS_LUA_VERSION")
+	if version and version ~= "" then
+		return version
+	end
+	return "dev"
+end
+
+local function print_help()
+	print("Prometheus Lua CLI")
+	print("Usage: prometheus-lua [command] [options] <input.lua>")
+	print("")
+	print("Commands:")
+	print("  update                 Install latest release via installer script")
+	print("  --version, -v          Print CLI version")
+	print("")
+	print("Obfuscation options:")
+	print("  --preset, --p <name>   Use preset (e.g. Minify, Medium, High)")
+	print("  --config, --c <file>   Use custom config Lua file")
+	print("  --out, --o <file>      Set output path")
+	print("  --Lua51                Force Lua 5.1 target")
+	print("  --LuaU                 Force LuaU target")
+	print("  --pretty               Pretty print output")
+	print("  --nocolors             Disable colored logs")
+	print("  --saveerrors           Persist parser errors to file")
+end
+
+local function run_update()
+	local command
+	if run_shell("command -v curl >/dev/null 2>&1") then
+		command = string.format("curl -fsSL '%s' | sh", INSTALL_SCRIPT_URL)
+	elseif run_shell("command -v wget >/dev/null 2>&1") then
+		command = string.format("wget -qO- '%s' | sh", INSTALL_SCRIPT_URL)
+	else
+		io.stderr:write("Neither curl nor wget was found. Please install one of them and retry.\n")
+		os.exit(1)
+	end
+
+	print("Updating prometheus-lua using official installer")
+	if not run_shell(command) then
+		io.stderr:write("Update failed\n")
+		os.exit(1)
+	end
+
+	print("Update completed")
+end
+
+if arg[1] == "update" then
+	run_update()
+	os.exit(0)
+end
+
+if arg[1] == "--version" or arg[1] == "-v" then
+	print(get_version())
+	os.exit(0)
+end
+
+if arg[1] == "--help" or arg[1] == "-h" or arg[1] == "help" then
+	print_help()
+	os.exit(0)
+end
+
 ---@diagnostic disable-next-line: different-requires
 local Prometheus = require("prometheus")
 Prometheus.Logger.logLevel = Prometheus.Logger.LogLevel.Info

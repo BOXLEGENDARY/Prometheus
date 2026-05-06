@@ -1,11 +1,33 @@
 # Installation
 
-To install Prometheus, simply clone the Github Repository using:
+## Linux and macOS (recommended)
 
-```batch
-git clone "https://github.com/levno-710/Prometheus.git"
+Install the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prometheus-lua/Prometheus/master/install.sh | sh
 ```
 
-Alternatively you can download the Sources [here](https://github.com/levno-710/Prometheus/archive/refs/heads/master.zip).
+Verify:
 
-Prometheus also Requires LuaJIT or Lua51 in order to work. The Lua51 binaries can be downloaded [here](https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/).
+```bash
+prometheus-lua --version
+```
+
+Release bundles include a Lua runtime, so no separate Lua install is needed for installed CLI usage.
+
+Update later:
+
+```bash
+prometheus-lua update
+```
+
+## From source
+
+```bash
+git clone "https://github.com/prometheus-lua/Prometheus.git"
+cd Prometheus
+./prometheus-lua --preset Medium ./your_file.lua
+```
+
+For source usage, Prometheus requires LuaJIT or Lua 5.1+.
