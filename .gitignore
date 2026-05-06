@@ -10,6 +10,7 @@ buildnotes.txt
 srlua.exe
 glue.exe
 build
+dist
 
 # Web tooling
 node_modules

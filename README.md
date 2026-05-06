@@ -53,21 +53,35 @@ Try the browser version first:
   <img src="https://img.shields.io/badge/Prometheus%20Web-Open-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Web UI" />
 </a>
 
-### Local CLI usage
-Clone the repository:
+### Install CLI (Linux/macOS)
+
+Install latest release with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/prometheus-lua/Prometheus/master/install.sh | sh
+```
+
+Then use the CLI directly:
+
+```bash
+prometheus-lua --version
+prometheus-lua --preset Medium ./your_file.lua
+```
+
+The release bundle includes a Lua runtime, so no separate Lua install is required for the packaged CLI.
+
+To update to the latest release:
+
+```bash
+prometheus-lua update
+```
+
+### Local source usage
 
 ```bash
 git clone https://github.com/prometheus-lua/Prometheus.git
 cd Prometheus
-```
-
-Alternatively, you can download the sources directly [here](https://github.com/prometheus-lua/Prometheus/archive/refs/heads/master.zip).
-
-
-To obfuscate a script, run:
-
-```bash
-lua ./cli.lua --preset Medium ./your_file.lua
+./prometheus-lua --preset Medium ./your_file.lua
 ```
 
 ---
@@ -123,7 +137,8 @@ You can find the full documentation, including the getting started guide, here:
 
 ### Requirements
 
-Prometheus requires **LuaJIT** or **Lua 5.1** in order to run.
+Packaged CLI releases include a bundled Lua runtime.
+For source usage, Prometheus requires **LuaJIT** or **Lua 5.1+**.
 
 Lua 5.1 binaries can be downloaded here:  
 https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/
