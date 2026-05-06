@@ -2,7 +2,7 @@ name: Deploy Web UI
 
 on:
   push:
-    branches: [master]
+    branches: [master, feature/webui]
   workflow_dispatch:
 
 permissions:
