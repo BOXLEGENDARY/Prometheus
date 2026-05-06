@@ -1,5 +1,5 @@
 import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { CodeEditor } from "@/components/CodeEditor"
@@ -134,16 +134,6 @@ export default function App() {
 
   const canExport = output.trim().length > 0
 
-  const status = useMemo(() => {
-    if (isRunning) {
-      return "Obfuscating"
-    }
-    if (logs.some((log) => log.level === "error")) {
-      return "Error"
-    }
-    return output ? "Ready" : "Idle"
-  }, [isRunning, logs, output])
-
   async function obfuscate() {
     let worker = workerRef.current
     const workerUrl =
@@ -256,7 +246,6 @@ export default function App() {
                 GitHub
                 <Github className="size-3.5" />
               </a>
-              <span className="rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">{status}</span>
               <Button onClick={obfuscate} disabled={isRunning} className="min-w-32">
                 {isRunning ? <Loader2 className="animate-spin" /> : <Play />}
                 Obfuscate
