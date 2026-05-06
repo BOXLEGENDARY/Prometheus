@@ -1,0 +1,11 @@
+{
+  "name": "prometheus-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "web:dev": "pnpm --filter web dev",
+    "web:build": "pnpm --filter web build",
+    "web:preview": "pnpm --filter web preview",
+    "web:test": "pnpm --filter web test"
+  }
+}
