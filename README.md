@@ -25,7 +25,9 @@
 
 ---
 
-## About
+<p align="center">
+  <img src="assets/readme/obfuscation-preview.gif" alt="Prometheus obfuscation process preview" width="900" />
+</p>
 
 **Prometheus** is a Lua obfuscator written in pure Lua.
 
@@ -41,11 +43,24 @@ Currently, Prometheus supports:
 
 ---
 
-## Preview
 
-<p align="center">
-  <img src="assets/readme/obfuscation-preview.gif" alt="Prometheus obfuscation process preview" width="900" />
-</p>
+## Quick Start
+
+Clone the repository:
+
+```bash
+git clone https://github.com/prometheus-lua/Prometheus.git
+cd Prometheus
+```
+
+Alternatively, you can download the sources directly [here](https://github.com/prometheus-lua/Prometheus/archive/refs/heads/master.zip).
+
+
+To obfuscate a script, run:
+
+```bash
+lua ./cli.lua --preset Medium ./your_file.lua
+```
 
 ---
 
@@ -98,33 +113,12 @@ You can find the full documentation, including the getting started guide, here:
 
 ---
 
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/prometheus-lua/Prometheus.git
-cd Prometheus
-```
-
-Alternatively, you can download the sources directly [here](https://github.com/prometheus-lua/Prometheus/archive/refs/heads/master.zip).
-
 ### Requirements
 
 Prometheus requires **LuaJIT** or **Lua 5.1** in order to run.
 
 Lua 5.1 binaries can be downloaded here:  
 https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/
-
----
-
-## Quick Start
-
-To quickly obfuscate a script, run:
-
-```bash
-lua ./cli.lua --preset Medium ./your_file.lua
-```
 
 ---
 
