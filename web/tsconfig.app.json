@@ -17,7 +17,6 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "virtual:prometheus-lua": ["./src/types/virtual-prometheus-lua.d.ts"]
