@@ -111,7 +111,7 @@ return {
 			{
 				Name = "NumbersToExpressions",
 				Settings = {
-					NumberRepresentationMutaton = true
+					NumberRepresentationMutation = true
 				},
 			},
 			{ Name = "WrapInFunction", Settings = {} },
