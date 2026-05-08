@@ -190,7 +190,7 @@ export default function App() {
   const isObfuscating = activeJob === "obfuscate"
   const isRunningInput = activeJob === "run-input"
   const isRunningOutput = activeJob === "run-output"
-  const docsHref = new URL("docs/index.html", window.location.href).toString()
+  const docsHref = `${import.meta.env.BASE_URL}docs/index.html`
 
   async function sendWorkerRequest(request: WorkerRequest): Promise<PrometheusResult> {
     try {
