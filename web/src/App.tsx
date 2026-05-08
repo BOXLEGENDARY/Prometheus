@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw } from "lucide-react"
+import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -28,6 +28,8 @@ print(message)
 `
 const WORKER_TIMEOUT_MS = 90_000
 
+type ActiveJob = "idle" | "obfuscate" | "run-input" | "run-output"
+
 function createSeed() {
   return Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] % 2147483646) + 1
 }
@@ -50,7 +52,7 @@ function formatWorkerError(event: ErrorEvent): string {
   const detail =
     event.error instanceof Error
       ? `${event.error.name}: ${event.error.message}${event.error.stack ? `\n${event.error.stack}` : ""}`
-      : event.message || "Worker crashed while processing the obfuscation request."
+      : event.message || "Worker crashed while processing the request."
   return `${detail}${location}`
 }
 
@@ -62,7 +64,7 @@ export default function App() {
   const [prettyPrint, setPrettyPrint] = useState(false)
   const [seed, setSeed] = useState(createSeed)
   const [logs, setLogs] = useState<PrometheusLog[]>([])
-  const [isRunning, setIsRunning] = useState(false)
+  const [activeJob, setActiveJob] = useState<ActiveJob>("idle")
   const [copied, setCopied] = useState(false)
   const workerRef = useRef<Worker | null>(null)
   const requestIdRef = useRef(0)
@@ -74,7 +76,7 @@ export default function App() {
       const detail = formatWorkerError(errorEvent)
       console.error("Prometheus worker error event:", event)
       console.error("Prometheus worker detail:", detail)
-      setIsRunning(false)
+      setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: detail }])
       toast.error("Worker error")
       workerRef.current?.terminate()
@@ -83,7 +85,7 @@ export default function App() {
 
     worker.addEventListener("messageerror", (event) => {
       console.error("Prometheus worker message error:", event)
-      setIsRunning(false)
+      setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: "Worker message decode failed." }])
       toast.error("Worker message error")
       workerRef.current?.terminate()
@@ -117,14 +119,32 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
-    const workerUrl = new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
-    workerUrlRef.current = workerUrl
+  function createWorker() {
     const worker = new Worker(new URL("./worker/prometheus.worker.ts", import.meta.url), {
       type: "module",
     })
     workerRef.current = worker
     setupWorker(worker)
+    return worker
+  }
+
+  function stopCurrentJob() {
+    if (activeJob === "idle") {
+      return
+    }
+
+    workerRef.current?.terminate()
+    workerRef.current = null
+    createWorker()
+    setActiveJob("idle")
+    setLogs((current) => [...current, { level: "warn", message: "Execution stopped by user." }])
+    toast("Execution stopped")
+  }
+
+  useEffect(() => {
+    const workerUrl = new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
+    workerUrlRef.current = workerUrl
+    createWorker()
 
     return () => {
       workerRef.current?.terminate()
@@ -133,36 +153,73 @@ export default function App() {
   }, [])
 
   const canExport = output.trim().length > 0
+  const isBusy = activeJob !== "idle"
+  const isObfuscating = activeJob === "obfuscate"
+  const isRunningInput = activeJob === "run-input"
+  const isRunningOutput = activeJob === "run-output"
 
-  async function obfuscate() {
+  async function sendWorkerRequest(request: WorkerRequest): Promise<PrometheusResult> {
     let worker = workerRef.current
     const workerUrl =
       workerUrlRef.current || new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
     const preflight = await canLoadWorker(workerUrl)
     if (!preflight.ok) {
-      setIsRunning(false)
-      setLogs([{ level: "error", message: preflight.message ?? "Worker preflight failed." }])
-      toast.error("Worker load failed")
-      return
+      setActiveJob("idle")
+      return {
+        ok: false,
+        error: preflight.message ?? "Worker preflight failed.",
+        logs: [],
+      }
     }
 
     if (!worker) {
-      worker = new Worker(new URL("./worker/prometheus.worker.ts", import.meta.url), {
-        type: "module",
-      })
-      setupWorker(worker)
-      workerRef.current = worker
+      worker = createWorker()
     }
 
-    if (!worker || isRunning) {
+    return new Promise<PrometheusResult>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        worker?.removeEventListener("message", listener)
+        reject(new Error("Worker timed out before returning a result."))
+      }, WORKER_TIMEOUT_MS)
+
+      const listener = (event: MessageEvent<WorkerResponse>) => {
+        const response = event.data
+        if (response.id !== request.id) {
+          return
+        }
+        if (response.type === "log") {
+          setLogs((current) => [...current, response.log])
+          return
+        }
+        if (response.type !== "result") {
+          return
+        }
+        window.clearTimeout(timeout)
+        worker?.removeEventListener("message", listener)
+        resolve(response.result)
+      }
+      worker?.addEventListener("message", listener)
+      worker?.postMessage(request)
+    }).catch((error): PrometheusResult => {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        logs: [],
+      }
+    })
+  }
+
+  async function obfuscate() {
+    if (isBusy) {
       return
     }
 
-    setIsRunning(true)
+    setActiveJob("obfuscate")
     setLogs([])
     const id = ++requestIdRef.current
     const request: WorkerRequest = {
       id,
+      action: "obfuscate",
       options: {
         source,
         filename: "browser-input.lua",
@@ -173,41 +230,62 @@ export default function App() {
       },
     }
 
-    const result = await new Promise<WorkerResponse["result"]>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        worker.removeEventListener("message", listener)
-        reject(new Error("Worker timed out before returning a result."))
-      }, WORKER_TIMEOUT_MS)
-
-      const listener = (event: MessageEvent<WorkerResponse>) => {
-        if (event.data.id !== id) {
-          return
-        }
-        window.clearTimeout(timeout)
-        worker.removeEventListener("message", listener)
-        resolve(event.data.result)
-      }
-      worker.addEventListener("message", listener)
-      worker.postMessage(request)
-    }).catch((error): PrometheusResult => {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        logs: [],
-      }
-    })
-
-    setIsRunning(false)
+    const result = await sendWorkerRequest(request)
+    setActiveJob("idle")
     setLogs(result.logs)
+
     if (result.ok) {
       setOutput(result.output)
       setSeed(createSeed())
       toast.success("Obfuscation complete")
-    } else {
-      setOutput("")
-      setLogs([...result.logs, { level: "error", message: result.error }])
-      toast.error("Obfuscation failed")
+      return
     }
+
+    setOutput("")
+    setLogs([...result.logs, { level: "error", message: result.error }])
+    toast.error("Obfuscation failed")
+  }
+
+  async function runScript(kind: "input" | "output") {
+    if (isBusy) {
+      return
+    }
+
+    const script = kind === "input" ? source : output
+    if (!script.trim()) {
+      setLogs([{ level: "warn", message: `No ${kind} script to run.` }])
+      return
+    }
+
+    setActiveJob(kind === "input" ? "run-input" : "run-output")
+    setLogs([])
+    const id = ++requestIdRef.current
+    const request: WorkerRequest = {
+      id,
+      action: "runScript",
+      source: script,
+      filename: kind === "input" ? "browser-input.lua" : "browser-output.lua",
+    }
+
+    const result = await sendWorkerRequest(request)
+    setActiveJob("idle")
+
+    if (result.ok) {
+      setLogs((current) => {
+        if (current.length > 0) {
+          return current
+        }
+        if (result.logs.length > 0) {
+          return result.logs
+        }
+        return [{ level: "info", message: "Script finished without output." }]
+      })
+      toast.success("Script execution complete")
+      return
+    }
+
+    setLogs([...result.logs, { level: "error", message: result.error }])
+    toast.error("Script execution failed")
   }
 
   async function copyOutput() {
@@ -221,7 +299,7 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <main className="flex min-h-screen flex-col">
+      <main className="flex h-screen min-h-0 flex-col overflow-hidden">
         <header className="border-b bg-card">
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
@@ -246,9 +324,9 @@ export default function App() {
                 GitHub
                 <Github className="size-3.5" />
               </a>
-              <Button onClick={obfuscate} disabled={isRunning} className="min-w-32">
-                {isRunning ? <Loader2 className="animate-spin" /> : <Play />}
-                Obfuscate
+              <Button onClick={isObfuscating ? stopCurrentJob : obfuscate} disabled={isBusy && !isObfuscating} className="min-w-32">
+                {isObfuscating ? <Loader2 className="animate-spin" /> : <Play />}
+                {isObfuscating ? "Stop" : "Obfuscate"}
               </Button>
             </div>
           </div>
@@ -259,7 +337,7 @@ export default function App() {
             <div className="space-y-1.5">
               <Label>Preset</Label>
               <Select value={preset} onValueChange={(value) => setPreset(value as PresetName)}>
-                <SelectTrigger>
+                <SelectTrigger disabled={isBusy}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -274,7 +352,7 @@ export default function App() {
             <div className="space-y-1.5">
               <Label>Lua Version</Label>
               <Select value={luaVersion} onValueChange={(value) => setLuaVersion(value as LuaVersion)}>
-                <SelectTrigger>
+                <SelectTrigger disabled={isBusy}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -287,7 +365,7 @@ export default function App() {
               </Select>
             </div>
             <div className="flex h-10 items-center gap-2 self-end rounded-md border bg-card px-3">
-              <Switch checked={prettyPrint} onCheckedChange={setPrettyPrint} id="pretty-print" />
+              <Switch checked={prettyPrint} onCheckedChange={setPrettyPrint} id="pretty-print" disabled={isBusy} />
               <Label htmlFor="pretty-print" className="text-sm">
                 Pretty print
               </Label>
@@ -300,11 +378,12 @@ export default function App() {
                   type="number"
                   min={1}
                   value={seed}
+                  disabled={isBusy}
                   onChange={(event) => setSeed(Math.max(1, Number(event.target.value) || 1))}
                 />
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={() => setSeed(createSeed())} aria-label="Generate seed">
+                    <Button variant="outline" size="icon" onClick={() => setSeed(createSeed())} disabled={isBusy} aria-label="Generate seed">
                       <RotateCcw />
                     </Button>
                   </TooltipTrigger>
@@ -333,10 +412,32 @@ export default function App() {
           </div>
         </section>
 
-        <section className="mx-auto grid min-h-[620px] w-full max-w-[1600px] flex-1 gap-3 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_340px]">
-          <CodeEditor label="Lua input" value={source} onChange={setSource} />
-          <CodeEditor label="Obfuscated output" value={output} readOnly />
-          <aside className="flex min-h-[240px] flex-col rounded-md border bg-card">
+        <section className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 gap-3 overflow-hidden px-4 py-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_340px]">
+          <CodeEditor
+            label="Lua input"
+            value={source}
+            onChange={setSource}
+            className="max-h-[560px] xl:max-h-none"
+            actionButton={{
+              label: isRunningInput ? "Stop" : "Run",
+              icon: isRunningInput ? <Square /> : <Play />,
+              onClick: isRunningInput ? stopCurrentJob : () => runScript("input"),
+              disabled: isBusy && !isRunningInput,
+            }}
+          />
+          <CodeEditor
+            label="Obfuscated output"
+            value={output}
+            readOnly
+            className="max-h-[560px] xl:max-h-none"
+            actionButton={{
+              label: isRunningOutput ? "Stop" : "Run",
+              icon: isRunningOutput ? <Square /> : <Play />,
+              onClick: isRunningOutput ? stopCurrentJob : () => runScript("output"),
+              disabled: isBusy && !isRunningOutput,
+            }}
+          />
+          <aside className="flex min-h-0 min-w-0 max-h-[280px] flex-col overflow-hidden rounded-md border bg-card xl:max-h-none">
             <div className="px-3 py-2 text-xs font-medium text-muted-foreground">Logs</div>
             <Separator />
             <ScrollArea className="min-h-0 flex-1">
