@@ -31,5 +31,6 @@ Use these exact values in `Steps[i].Name`:
 ## Notes
 
 - Some constructor keys differ from internal human-readable names.
+- `Vmify` is a legacy constructor key name; behavior is closer to control-flow flattening style obfuscation than full virtualization.
 - You can apply the same step more than once.
 - If a step returns a new AST, that AST is used for later steps.

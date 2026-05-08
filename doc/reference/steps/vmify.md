@@ -2,7 +2,8 @@
 
 Constructor key: `Vmify`
 
-Compiles script AST into Prometheus VM bytecode and emits VM runtime code.
+`Vmify` is a legacy step name kept for backward compatibility.
+In practice, this transformation is better understood as control-flow flattening style obfuscation rather than full virtualization.
 
 ## Settings
 
