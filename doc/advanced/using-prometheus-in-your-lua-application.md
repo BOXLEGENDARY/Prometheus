@@ -4,7 +4,7 @@ Prometheus can also be used as a library for your custom Lua Applications instea
 
 In order to do that you'll first need to clone the github repo:
 
-```batch
+```sh
 git clone "https://github.com/levno-710/Prometheus.git"
 ```
 

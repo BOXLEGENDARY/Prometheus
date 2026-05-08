@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Share2, Square } from "lucide-react"
+import { BookText, Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Share2, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -190,6 +190,7 @@ export default function App() {
   const isObfuscating = activeJob === "obfuscate"
   const isRunningInput = activeJob === "run-input"
   const isRunningOutput = activeJob === "run-output"
+  const docsHref = new URL("docs/index.html", window.location.href).toString()
 
   async function sendWorkerRequest(request: WorkerRequest): Promise<PrometheusResult> {
     try {
@@ -500,6 +501,13 @@ export default function App() {
               >
                 GitHub
                 <Github className="size-3.5" />
+              </a>
+              <a
+                href={docsHref}
+                className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                Docs
+                <BookText className="size-3.5" />
               </a>
               <Button onClick={isObfuscating ? stopCurrentJob : () => void obfuscate()} disabled={isBusy && !isObfuscating} className="min-w-32">
                 {isObfuscating ? <Loader2 className="animate-spin" /> : <Play />}

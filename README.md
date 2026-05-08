@@ -133,8 +133,8 @@ Focused on real obfuscation passes useful for shipped Lua applications.
 You can find the full documentation, including the getting started guide, here:
 
 <p align="center">
-  <a href="https://levno-710.gitbook.io/prometheus">
-    <img src="https://img.shields.io/badge/Documentation-Read%20the%20Docs-111111?style=for-the-badge&logo=gitbook&logoColor=white" alt="Documentation" />
+  <a href="https://prometheus-lua.github.io/Prometheus/docs/">
+    <img src="https://img.shields.io/badge/Documentation-Read%20the%20Docs-111111?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentation" />
   </a>
 </p>
 
@@ -169,7 +169,7 @@ return(function(...)local L={"afT6mf1V","/7mJXsuvmE1c/fT3";"tn1ZSn6=","37ghSJM="
 -- remaining obfuscated output omitted
 ```
 
-For more advanced use cases, configuration, and presets, see the [documentation](https://levno-710.gitbook.io/prometheus/).
+For more advanced use cases, configuration, and presets, see the [documentation](https://prometheus-lua.github.io/Prometheus/docs/).
 
 ---
 

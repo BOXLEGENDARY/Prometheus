@@ -17,6 +17,7 @@ node_modules
 web/node_modules
 web/dist
 web/dist-ssr
+web/public/docs
 web/test-results
 web/playwright-report
 .vite

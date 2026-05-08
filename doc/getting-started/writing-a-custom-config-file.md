@@ -35,7 +35,7 @@ return {
 
 One can now obfuscate a script using this configuration by running:
 
-```batch
+```sh
 lua ./cli.lua --config config.lua hello_world.lua
 ```
 

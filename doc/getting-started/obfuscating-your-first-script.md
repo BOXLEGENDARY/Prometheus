@@ -14,13 +14,13 @@ print("Hello, World")
 
 Now run the following command inside of the Prometheus directory:
 
-```batch
+```sh
 lua ./cli.lua ./hello_world.lua
 ```
 
 You may notice, that the console output looks weird. If that is the case, your terminal does not support ansi color escape sequences. You should add the `--nocolors` option:
 
-```batch
+```sh
 lua ./cli.lua --nocolors ./hello_world.lua
 ```
 
@@ -41,7 +41,7 @@ As you can see, the file hasn't changed at all. That is because by default prome
 
 In order to perform the obfuscation, you need to specify that Prometheus should use the Strong preset:
 
-```batch
+```sh
 lua ./cli.lua --preset Medium ./hello_world.lua
 ```
 
