@@ -17,7 +17,7 @@ When opening a bug report, include:
 - Clear bug description
 - Expected behavior
 - Steps to reproduce
-- A minimal reproducible example shared via the Prometheus Web playground: https://prometheus-lua.github.io/Prometheus/
+- A minimal reproducible example shared via the Prometheus Playground: https://prometheus-lua.github.io/Prometheus/
 - Config used (preset/custom config)
 - Produced output and relevant errors/logs
 - Environment details (OS, Lua/LuaJIT version)

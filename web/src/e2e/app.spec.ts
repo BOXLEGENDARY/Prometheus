@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 test("loads under the GitHub Pages base and obfuscates input", async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Prometheus Web" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prometheus Playground" })).toBeVisible()
 
   const input = page.getByLabel("Lua input").locator(".cm-content")
   await input.click()
@@ -22,7 +22,7 @@ test("loads under the GitHub Pages base and obfuscates input", async ({ page }) 
 
 test("runs input script and shows logs", async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Prometheus Web" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prometheus Playground" })).toBeVisible()
 
   const input = page.getByLabel("Lua input").locator(".cm-content")
   await input.click()
@@ -37,7 +37,7 @@ test("runs input script and shows logs", async ({ page }) => {
 test("share link roundtrip keeps the same obfuscated output", async ({ browser, page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Prometheus Web" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prometheus Playground" })).toBeVisible()
 
   const input = page.getByLabel("Lua input").locator(".cm-content")
   await input.click()
@@ -66,7 +66,7 @@ test("share link roundtrip keeps the same obfuscated output", async ({ browser, 
 test("share link can be created after obfuscation fails", async ({ browser, page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Prometheus Web" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prometheus Playground" })).toBeVisible()
 
   const input = page.getByLabel("Lua input").locator(".cm-content")
   await input.click()

@@ -6,7 +6,7 @@ description: Prometheus is a Lua obfuscator written in pure Lua.
 
 Prometheus obfuscates Lua source code using AST transforms and a configurable pipeline.
 
-Use the [Prometheus Webapp](https://prometheus-lua.github.io/Prometheus/) to quickly try out settings and test small snippets. For larger scripts and advanced workflows, use the CLI (`prometheus-lua` or `cli.lua`).
+Use the [Prometheus Playground](https://prometheus-lua.github.io/Prometheus/) to quickly try out settings and test small snippets. For larger scripts and advanced workflows, use the CLI (`prometheus-lua` or `cli.lua`).
 
 This documentation covers:
 
