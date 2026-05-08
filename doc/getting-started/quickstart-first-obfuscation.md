@@ -1,5 +1,7 @@
 # Quickstart: First Obfuscation
 
+You can quickly try Prometheus in the [Prometheus Webapp](https://prometheus-lua.github.io/Prometheus/). For large scripts or advanced use cases, prefer the CLI workflow below.
+
 Create a simple Lua file:
 
 ```lua
