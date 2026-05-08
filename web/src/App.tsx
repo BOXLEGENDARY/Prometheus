@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Square } from "lucide-react"
+import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Share2, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -29,6 +29,16 @@ print(message)
 const WORKER_TIMEOUT_MS = 90_000
 
 type ActiveJob = "idle" | "obfuscate" | "run-input" | "run-output"
+type SharePayload = {
+  version: 1
+  source: string
+  preset: PresetName
+  luaVersion: LuaVersion
+  prettyPrint: boolean
+  seed: number
+  outputHash: string | null
+}
+type LastObfuscation = Omit<SharePayload, "version">
 
 function createSeed() {
   return Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] % 2147483646) + 1
@@ -56,6 +66,42 @@ function formatWorkerError(event: ErrorEvent): string {
   return `${detail}${location}`
 }
 
+function encodeBase64Url(input: string): string {
+  const bytes = new TextEncoder().encode(input)
+  let binary = ""
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+}
+
+function decodeBase64Url(input: string): string {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/")
+  const padding = "=".repeat((4 - (normalized.length % 4)) % 4)
+  const binary = atob(normalized + padding)
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+function fallbackHash(input: string): string {
+  // FNV-1a 32-bit fallback for environments where SubtleCrypto is unavailable.
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  if (!crypto.subtle) {
+    return fallbackHash(input)
+  }
+  const bytes = new TextEncoder().encode(input)
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export default function App() {
   const [source, setSource] = useState(initialSource)
   const [output, setOutput] = useState("")
@@ -66,9 +112,19 @@ export default function App() {
   const [logs, setLogs] = useState<PrometheusLog[]>([])
   const [activeJob, setActiveJob] = useState<ActiveJob>("idle")
   const [copied, setCopied] = useState(false)
+  const [lastObfuscation, setLastObfuscation] = useState<LastObfuscation | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestIdRef = useRef(0)
   const workerUrlRef = useRef<string>("")
+  const autoShareLoadedRef = useRef(false)
+  const pendingWorkerRejectsRef = useRef(new Set<(error: Error) => void>())
+
+  function rejectPendingWorkerRequests(message: string) {
+    for (const reject of pendingWorkerRejectsRef.current) {
+      reject(new Error(message))
+    }
+    pendingWorkerRejectsRef.current.clear()
+  }
 
   function setupWorker(worker: Worker) {
     worker.addEventListener("error", (event: Event) => {
@@ -76,6 +132,7 @@ export default function App() {
       const detail = formatWorkerError(errorEvent)
       console.error("Prometheus worker error event:", event)
       console.error("Prometheus worker detail:", detail)
+      rejectPendingWorkerRequests(detail)
       setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: detail }])
       toast.error("Worker error")
@@ -85,38 +142,13 @@ export default function App() {
 
     worker.addEventListener("messageerror", (event) => {
       console.error("Prometheus worker message error:", event)
+      rejectPendingWorkerRequests("Worker message decode failed.")
       setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: "Worker message decode failed." }])
       toast.error("Worker message error")
       workerRef.current?.terminate()
       workerRef.current = null
     })
-  }
-
-  async function canLoadWorker(workerUrl: string): Promise<{ ok: boolean; message?: string }> {
-    if (window.location.protocol === "file:") {
-      return {
-        ok: false,
-        message:
-          "Worker cannot run from file://. Serve the app over http:// or https:// (for example with `pnpm --filter web dev` or `pnpm --filter web preview`).",
-      }
-    }
-
-    try {
-      const response = await fetch(workerUrl, { method: "GET", cache: "no-store" })
-      if (!response.ok) {
-        return {
-          ok: false,
-          message: `Worker script request failed: ${response.status} ${response.statusText} (${workerUrl})`,
-        }
-      }
-      return { ok: true }
-    } catch (error) {
-      return {
-        ok: false,
-        message: `Worker script request threw: ${error instanceof Error ? error.message : String(error)} (${workerUrl})`,
-      }
-    }
   }
 
   function createWorker() {
@@ -133,6 +165,7 @@ export default function App() {
       return
     }
 
+    rejectPendingWorkerRequests("Execution stopped by user.")
     workerRef.current?.terminate()
     workerRef.current = null
     createWorker()
@@ -159,91 +192,180 @@ export default function App() {
   const isRunningOutput = activeJob === "run-output"
 
   async function sendWorkerRequest(request: WorkerRequest): Promise<PrometheusResult> {
-    let worker = workerRef.current
-    const workerUrl =
-      workerUrlRef.current || new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
-    const preflight = await canLoadWorker(workerUrl)
-    if (!preflight.ok) {
-      setActiveJob("idle")
-      return {
-        ok: false,
-        error: preflight.message ?? "Worker preflight failed.",
-        logs: [],
+    try {
+      let worker = workerRef.current
+      if (window.location.protocol === "file:") {
+        return {
+          ok: false,
+          error:
+            "Worker cannot run from file://. Serve the app over http:// or https:// (for example with `pnpm --filter web dev` or `pnpm --filter web preview`).",
+          logs: [],
+        }
       }
-    }
 
-    if (!worker) {
-      worker = createWorker()
-    }
-
-    return new Promise<PrometheusResult>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        worker?.removeEventListener("message", listener)
-        reject(new Error("Worker timed out before returning a result."))
-      }, WORKER_TIMEOUT_MS)
-
-      const listener = (event: MessageEvent<WorkerResponse>) => {
-        const response = event.data
-        if (response.id !== request.id) {
-          return
-        }
-        if (response.type === "log") {
-          setLogs((current) => [...current, response.log])
-          return
-        }
-        if (response.type !== "result") {
-          return
-        }
-        window.clearTimeout(timeout)
-        worker?.removeEventListener("message", listener)
-        resolve(response.result)
+      if (!worker) {
+        worker = createWorker()
       }
-      worker?.addEventListener("message", listener)
-      worker?.postMessage(request)
-    }).catch((error): PrometheusResult => {
+
+      return new Promise<PrometheusResult>((resolve, reject) => {
+        let settled = false
+        const settle = (callback: () => void) => {
+          if (settled) {
+            return
+          }
+          settled = true
+          window.clearTimeout(timeout)
+          worker?.removeEventListener("message", listener)
+          pendingWorkerRejectsRef.current.delete(rejectRequest)
+          callback()
+        }
+        const rejectRequest = (error: Error) => settle(() => reject(error))
+        const timeout = window.setTimeout(() => {
+          rejectRequest(new Error("Worker timed out before returning a result."))
+        }, WORKER_TIMEOUT_MS)
+
+        const listener = (event: MessageEvent<WorkerResponse>) => {
+          const response = event.data
+          if (response.id !== request.id) {
+            return
+          }
+          if (response.type === "log") {
+            setLogs((current) => [...current, response.log])
+            return
+          }
+          if (response.type !== "result") {
+            return
+          }
+          settle(() => resolve(response.result))
+        }
+        pendingWorkerRejectsRef.current.add(rejectRequest)
+        worker?.addEventListener("message", listener)
+        worker?.postMessage(request)
+      }).catch((error): PrometheusResult => {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          logs: [],
+        }
+      })
+    } catch (error) {
       return {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
         logs: [],
       }
-    })
+    }
   }
 
-  async function obfuscate() {
-    if (isBusy) {
+  async function obfuscate(override?: {
+    sharedOutputHash?: string | null
+    options?: {
+      source: string
+      preset: PresetName
+      luaVersion: LuaVersion
+      prettyPrint: boolean
+      seed: number
+    }
+  }) {
+    if (isBusy && !override) {
       return
     }
 
     setActiveJob("obfuscate")
-    setLogs([])
-    const id = ++requestIdRef.current
-    const request: WorkerRequest = {
-      id,
-      action: "obfuscate",
-      options: {
-        source,
-        filename: "browser-input.lua",
-        preset,
-        luaVersion,
-        prettyPrint,
-        seed,
-      },
+    try {
+      setLogs([])
+      const id = ++requestIdRef.current
+      const options = override?.options ?? { source, preset, luaVersion, prettyPrint, seed }
+      const request: WorkerRequest = {
+        id,
+        action: "obfuscate",
+        options: {
+          source: options.source,
+          filename: "browser-input.lua",
+          preset: options.preset,
+          luaVersion: options.luaVersion,
+          prettyPrint: options.prettyPrint,
+          seed: options.seed,
+        },
+      }
+
+      const result = await sendWorkerRequest(request)
+      setLogs(result.logs)
+
+      if (result.ok) {
+        const outputHash = await sha256Hex(result.output)
+        setLastObfuscation({
+          source: options.source,
+          preset: options.preset,
+          luaVersion: options.luaVersion,
+          prettyPrint: options.prettyPrint,
+          seed: options.seed,
+          outputHash,
+        })
+        setOutput(result.output)
+        setSeed(createSeed())
+        if (typeof override?.sharedOutputHash === "string") {
+          if (outputHash !== override.sharedOutputHash) {
+            setOutput("")
+            setLogs((current) => [
+              ...current,
+              {
+                level: "error",
+                message:
+                  "This shared link was generated using an older version of Prometheus and no longer produces the intended obfuscated result.",
+              },
+            ])
+            toast.error("Shared link hash mismatch")
+            return
+          }
+          toast.success("Shared link loaded")
+          return
+        }
+        toast.success("Obfuscation complete")
+        return
+      }
+
+      setLastObfuscation({
+        source: options.source,
+        preset: options.preset,
+        luaVersion: options.luaVersion,
+        prettyPrint: options.prettyPrint,
+        seed: options.seed,
+        outputHash: null,
+      })
+      setOutput("")
+      setLogs([...result.logs, { level: "error", message: result.error }])
+      toast.error("Obfuscation failed")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOutput("")
+      setLogs((current) => [...current, { level: "error", message }])
+      toast.error("Obfuscation failed")
+    } finally {
+      setActiveJob("idle")
     }
+  }
 
-    const result = await sendWorkerRequest(request)
-    setActiveJob("idle")
-    setLogs(result.logs)
-
-    if (result.ok) {
-      setOutput(result.output)
-      setSeed(createSeed())
-      toast.success("Obfuscation complete")
+  async function shareLink() {
+    if (!lastObfuscation) {
       return
     }
 
-    setOutput("")
-    setLogs([...result.logs, { level: "error", message: result.error }])
-    toast.error("Obfuscation failed")
+    const payload: SharePayload = {
+      version: 1,
+      source: lastObfuscation.source,
+      preset: lastObfuscation.preset,
+      luaVersion: lastObfuscation.luaVersion,
+      prettyPrint: lastObfuscation.prettyPrint,
+      seed: lastObfuscation.seed,
+      outputHash: lastObfuscation.outputHash,
+    }
+    const encoded = encodeBase64Url(JSON.stringify(payload))
+    const shareUrl = new URL(window.location.href)
+    shareUrl.searchParams.set("share", encoded)
+    window.history.replaceState({}, "", shareUrl)
+    await navigator.clipboard.writeText(shareUrl.toString())
+    toast.success("Share link copied")
   }
 
   async function runScript(kind: "input" | "output") {
@@ -297,6 +419,61 @@ export default function App() {
     window.setTimeout(() => setCopied(false), 1200)
   }
 
+  useEffect(() => {
+    if (autoShareLoadedRef.current || isBusy) {
+      return
+    }
+
+    const encoded = new URL(window.location.href).searchParams.get("share")
+    if (!encoded) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      autoShareLoadedRef.current = true
+      let payload: SharePayload | null = null
+      try {
+        payload = JSON.parse(decodeBase64Url(encoded)) as SharePayload
+      } catch {
+        setLogs([{ level: "error", message: "Invalid shared link payload." }])
+        toast.error("Invalid shared link")
+        return
+      }
+
+      if (
+        payload.version !== 1 ||
+        !PRESETS.includes(payload.preset) ||
+        !LUA_VERSIONS.includes(payload.luaVersion) ||
+        typeof payload.source !== "string" ||
+        typeof payload.prettyPrint !== "boolean" ||
+        typeof payload.seed !== "number" ||
+        (typeof payload.outputHash !== "string" && payload.outputHash !== null)
+      ) {
+        setLogs([{ level: "error", message: "Invalid shared link payload." }])
+        toast.error("Invalid shared link")
+        return
+      }
+
+      setSource(payload.source)
+      setPreset(payload.preset)
+      setLuaVersion(payload.luaVersion)
+      setPrettyPrint(payload.prettyPrint)
+      setSeed(Math.max(1, Math.floor(payload.seed)))
+      void obfuscate({
+        sharedOutputHash: payload.outputHash,
+        options: {
+          source: payload.source,
+          preset: payload.preset,
+          luaVersion: payload.luaVersion,
+          prettyPrint: payload.prettyPrint,
+          seed: payload.seed,
+        },
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [isBusy])
+
   return (
     <TooltipProvider>
       <main className="flex h-screen min-h-0 flex-col overflow-hidden">
@@ -324,7 +501,7 @@ export default function App() {
                 GitHub
                 <Github className="size-3.5" />
               </a>
-              <Button onClick={isObfuscating ? stopCurrentJob : obfuscate} disabled={isBusy && !isObfuscating} className="min-w-32">
+              <Button onClick={isObfuscating ? stopCurrentJob : () => void obfuscate()} disabled={isBusy && !isObfuscating} className="min-w-32">
                 {isObfuscating ? <Loader2 className="animate-spin" /> : <Play />}
                 {isObfuscating ? "Stop" : "Obfuscate"}
               </Button>
@@ -407,6 +584,14 @@ export default function App() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Download output</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={shareLink} disabled={!lastObfuscation} aria-label="Share link">
+                    <Share2 />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Share link</TooltipContent>
               </Tooltip>
             </div>
           </div>

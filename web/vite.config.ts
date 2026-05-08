@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vitest/config"
+import { defineConfig } from "vite"
 
 import { prometheusLuaPlugin } from "./src/vite/prometheusLuaPlugin"
 
@@ -14,6 +14,7 @@ export default defineConfig(({ command }) => {
     base: isDevServer ? "/" : "/Prometheus/",
     plugins: [react(), tailwindcss(), prometheusLuaPlugin()],
     worker: {
+      format: "es",
       plugins: () => [prometheusLuaPlugin()],
     },
     resolve: {
