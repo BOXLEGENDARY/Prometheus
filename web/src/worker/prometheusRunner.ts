@@ -1,8 +1,41 @@
-import { LuaFactory } from "wasmoon"
+import glueWasmUrl from "wasmoon/dist/glue.wasm?url"
 
 import luaSources from "virtual:prometheus-lua"
 import type { PrometheusLog, PrometheusOptions, PrometheusResult } from "@/lib/prometheusTypes"
 import { toLuaLongString } from "./luaString"
+
+type LuaFactoryConstructor = new (
+  customWasmUri?: string,
+  environmentVariables?: Record<string, string>,
+) => {
+  createEngine(options?: { openStandardLibs?: boolean }): Promise<{
+    doString(luaCode: string): Promise<unknown>
+    global: { close(): void }
+  }>
+}
+
+let luaFactoryCtorPromise: Promise<LuaFactoryConstructor> | null = null
+
+async function getLuaFactoryConstructor(): Promise<LuaFactoryConstructor> {
+  if (luaFactoryCtorPromise) {
+    return luaFactoryCtorPromise
+  }
+
+  luaFactoryCtorPromise = import("wasmoon/dist/index.js").then((mod) => {
+    const globalCandidate = (globalThis as { wasmoon?: { LuaFactory?: unknown } }).wasmoon?.LuaFactory
+    const moduleCandidate = (mod as { LuaFactory?: unknown }).LuaFactory
+    const defaultCandidate = (mod as { default?: { LuaFactory?: unknown } }).default?.LuaFactory
+    const candidate = (globalCandidate ?? moduleCandidate ?? defaultCandidate) as LuaFactoryConstructor | undefined
+
+    if (typeof candidate !== "function") {
+      throw new Error("Unable to resolve LuaFactory export from wasmoon.")
+    }
+
+    return candidate
+  })
+
+  return luaFactoryCtorPromise
+}
 
 const bootstrapLua = Object.entries(luaSources)
   .map(([name, source]) => {
@@ -91,10 +124,13 @@ function normalizeLogs(logs: unknown): PrometheusLog[] {
 
 export async function runPrometheus(options: PrometheusOptions): Promise<PrometheusResult> {
   const logs: PrometheusLog[] = []
-  let lua: Awaited<ReturnType<LuaFactory["createEngine"]>> | null = null
+  let lua: Awaited<ReturnType<InstanceType<LuaFactoryConstructor>["createEngine"]>> | null = null
 
   try {
-    lua = await new LuaFactory().createEngine({ openStandardLibs: true })
+    // Force a local Vite-managed Wasm URL so dev/preview behave the same and
+    // we don't depend on wasmoon's default CDN URL resolution in workers.
+    const LuaFactory = await getLuaFactoryConstructor()
+    lua = await new LuaFactory(glueWasmUrl).createEngine({ openStandardLibs: true })
 
     const result = (await lua.doString(buildRunLua(options))) as {
       ok?: unknown
