@@ -9,7 +9,7 @@
 <br/>
 
 <a href="https://prometheus-lua.github.io/Prometheus/">
-  <img src="https://img.shields.io/badge/Prometheus%20Web-Try%20Out-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
+  <img src="https://img.shields.io/badge/Playground-Try%20Out-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
 </a>
 <a href="https://github.com/prometheus-lua/Prometheus/actions/workflows/Test.yml">
   <img src="https://img.shields.io/github/actions/workflow/status/prometheus-lua/Prometheus/Test.yml?branch=master&style=for-the-badge&label=Tests" alt="Tests" />
@@ -50,7 +50,7 @@ Try the browser version first:
 
 
 <a href="https://prometheus-lua.github.io/Prometheus/">
-  <img src="https://img.shields.io/badge/Prometheus%20Web-Open-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
+  <img src="https://img.shields.io/badge/Playground-Try%20Out-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
 </a>
 
 ### Install CLI (Linux/macOS)
@@ -88,43 +88,6 @@ git clone https://github.com/prometheus-lua/Prometheus.git
 cd Prometheus
 lua cli.lua --preset Medium ./your_file.lua
 ```
-
----
-
-## Highlights
-
-<div align="center">
-<table>
-<tr>
-<td width="33%" valign="top">
-
-### AST-Based
-Works on structured syntax trees instead of simple text replacements.
-
-</td>
-<td width="33%" valign="top">
-
-### Pure Lua
-Implemented in pure Lua with no heavy external runtime dependencies.
-
-</td>
-<td width="33%" valign="top">
-
-### Practical Protection
-Focused on real obfuscation passes useful for shipped Lua applications.
-
-</td>
-</tr>
-</table>
-</div>
-
-### Included techniques
-
-- Control-flow obfuscation / flattening
-- Constant and string encryption
-- Lua-specific runtime tricks
-- Anti-tamper related transformations
-- Additional AST-based obfuscation passes
 
 ---
 
