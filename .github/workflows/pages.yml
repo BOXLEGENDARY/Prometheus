@@ -31,8 +31,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build web
-        run: pnpm --filter web build
+      - name: Build web + docs
+        run: pnpm run web:build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

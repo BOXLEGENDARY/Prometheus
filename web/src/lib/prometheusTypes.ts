@@ -33,12 +33,27 @@ export interface PrometheusFailure {
 
 export type PrometheusResult = PrometheusSuccess | PrometheusFailure
 
-export interface WorkerRequest {
-  id: number
-  options: PrometheusOptions
-}
+export type WorkerRequest =
+  | {
+      id: number
+      action: "obfuscate"
+      options: PrometheusOptions
+    }
+  | {
+      id: number
+      action: "runScript"
+      source: string
+      filename: string
+    }
 
-export interface WorkerResponse {
-  id: number
-  result: PrometheusResult
-}
+export type WorkerResponse =
+  | {
+      id: number
+      type: "result"
+      result: PrometheusResult
+    }
+  | {
+      id: number
+      type: "log"
+      log: PrometheusLog
+    }

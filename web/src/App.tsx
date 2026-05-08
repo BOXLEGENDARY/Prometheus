@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw } from "lucide-react"
+import { BookText, Check, Copy, Download, FileCode2, Github, Loader2, Play, RotateCcw, Share2, Square } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -28,6 +28,18 @@ print(message)
 `
 const WORKER_TIMEOUT_MS = 90_000
 
+type ActiveJob = "idle" | "obfuscate" | "run-input" | "run-output"
+type SharePayload = {
+  version: 1
+  source: string
+  preset: PresetName
+  luaVersion: LuaVersion
+  prettyPrint: boolean
+  seed: number
+  outputHash: string | null
+}
+type LastObfuscation = Omit<SharePayload, "version">
+
 function createSeed() {
   return Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] % 2147483646) + 1
 }
@@ -50,8 +62,44 @@ function formatWorkerError(event: ErrorEvent): string {
   const detail =
     event.error instanceof Error
       ? `${event.error.name}: ${event.error.message}${event.error.stack ? `\n${event.error.stack}` : ""}`
-      : event.message || "Worker crashed while processing the obfuscation request."
+      : event.message || "Worker crashed while processing the request."
   return `${detail}${location}`
+}
+
+function encodeBase64Url(input: string): string {
+  const bytes = new TextEncoder().encode(input)
+  let binary = ""
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+}
+
+function decodeBase64Url(input: string): string {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/")
+  const padding = "=".repeat((4 - (normalized.length % 4)) % 4)
+  const binary = atob(normalized + padding)
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+function fallbackHash(input: string): string {
+  // FNV-1a 32-bit fallback for environments where SubtleCrypto is unavailable.
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  if (!crypto.subtle) {
+    return fallbackHash(input)
+  }
+  const bytes = new TextEncoder().encode(input)
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 export default function App() {
@@ -62,11 +110,21 @@ export default function App() {
   const [prettyPrint, setPrettyPrint] = useState(false)
   const [seed, setSeed] = useState(createSeed)
   const [logs, setLogs] = useState<PrometheusLog[]>([])
-  const [isRunning, setIsRunning] = useState(false)
+  const [activeJob, setActiveJob] = useState<ActiveJob>("idle")
   const [copied, setCopied] = useState(false)
+  const [lastObfuscation, setLastObfuscation] = useState<LastObfuscation | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestIdRef = useRef(0)
   const workerUrlRef = useRef<string>("")
+  const autoShareLoadedRef = useRef(false)
+  const pendingWorkerRejectsRef = useRef(new Set<(error: Error) => void>())
+
+  function rejectPendingWorkerRequests(message: string) {
+    for (const reject of pendingWorkerRejectsRef.current) {
+      reject(new Error(message))
+    }
+    pendingWorkerRejectsRef.current.clear()
+  }
 
   function setupWorker(worker: Worker) {
     worker.addEventListener("error", (event: Event) => {
@@ -74,7 +132,8 @@ export default function App() {
       const detail = formatWorkerError(errorEvent)
       console.error("Prometheus worker error event:", event)
       console.error("Prometheus worker detail:", detail)
-      setIsRunning(false)
+      rejectPendingWorkerRequests(detail)
+      setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: detail }])
       toast.error("Worker error")
       workerRef.current?.terminate()
@@ -83,7 +142,8 @@ export default function App() {
 
     worker.addEventListener("messageerror", (event) => {
       console.error("Prometheus worker message error:", event)
-      setIsRunning(false)
+      rejectPendingWorkerRequests("Worker message decode failed.")
+      setActiveJob("idle")
       setLogs((current) => [...current, { level: "error", message: "Worker message decode failed." }])
       toast.error("Worker message error")
       workerRef.current?.terminate()
@@ -91,40 +151,33 @@ export default function App() {
     })
   }
 
-  async function canLoadWorker(workerUrl: string): Promise<{ ok: boolean; message?: string }> {
-    if (window.location.protocol === "file:") {
-      return {
-        ok: false,
-        message:
-          "Worker cannot run from file://. Serve the app over http:// or https:// (for example with `pnpm --filter web dev` or `pnpm --filter web preview`).",
-      }
-    }
-
-    try {
-      const response = await fetch(workerUrl, { method: "GET", cache: "no-store" })
-      if (!response.ok) {
-        return {
-          ok: false,
-          message: `Worker script request failed: ${response.status} ${response.statusText} (${workerUrl})`,
-        }
-      }
-      return { ok: true }
-    } catch (error) {
-      return {
-        ok: false,
-        message: `Worker script request threw: ${error instanceof Error ? error.message : String(error)} (${workerUrl})`,
-      }
-    }
-  }
-
-  useEffect(() => {
-    const workerUrl = new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
-    workerUrlRef.current = workerUrl
+  function createWorker() {
     const worker = new Worker(new URL("./worker/prometheus.worker.ts", import.meta.url), {
       type: "module",
     })
     workerRef.current = worker
     setupWorker(worker)
+    return worker
+  }
+
+  function stopCurrentJob() {
+    if (activeJob === "idle") {
+      return
+    }
+
+    rejectPendingWorkerRequests("Execution stopped by user.")
+    workerRef.current?.terminate()
+    workerRef.current = null
+    createWorker()
+    setActiveJob("idle")
+    setLogs((current) => [...current, { level: "warn", message: "Execution stopped by user." }])
+    toast("Execution stopped")
+  }
+
+  useEffect(() => {
+    const workerUrl = new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
+    workerUrlRef.current = workerUrl
+    createWorker()
 
     return () => {
       workerRef.current?.terminate()
@@ -133,81 +186,229 @@ export default function App() {
   }, [])
 
   const canExport = output.trim().length > 0
+  const isBusy = activeJob !== "idle"
+  const isObfuscating = activeJob === "obfuscate"
+  const isRunningInput = activeJob === "run-input"
+  const isRunningOutput = activeJob === "run-output"
+  const docsHref = `${import.meta.env.BASE_URL}docs/index.html`
 
-  async function obfuscate() {
-    let worker = workerRef.current
-    const workerUrl =
-      workerUrlRef.current || new URL("./worker/prometheus.worker.ts", import.meta.url).toString()
-    const preflight = await canLoadWorker(workerUrl)
-    if (!preflight.ok) {
-      setIsRunning(false)
-      setLogs([{ level: "error", message: preflight.message ?? "Worker preflight failed." }])
-      toast.error("Worker load failed")
-      return
-    }
-
-    if (!worker) {
-      worker = new Worker(new URL("./worker/prometheus.worker.ts", import.meta.url), {
-        type: "module",
-      })
-      setupWorker(worker)
-      workerRef.current = worker
-    }
-
-    if (!worker || isRunning) {
-      return
-    }
-
-    setIsRunning(true)
-    setLogs([])
-    const id = ++requestIdRef.current
-    const request: WorkerRequest = {
-      id,
-      options: {
-        source,
-        filename: "browser-input.lua",
-        preset,
-        luaVersion,
-        prettyPrint,
-        seed,
-      },
-    }
-
-    const result = await new Promise<WorkerResponse["result"]>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        worker.removeEventListener("message", listener)
-        reject(new Error("Worker timed out before returning a result."))
-      }, WORKER_TIMEOUT_MS)
-
-      const listener = (event: MessageEvent<WorkerResponse>) => {
-        if (event.data.id !== id) {
-          return
+  async function sendWorkerRequest(request: WorkerRequest): Promise<PrometheusResult> {
+    try {
+      let worker = workerRef.current
+      if (window.location.protocol === "file:") {
+        return {
+          ok: false,
+          error:
+            "Worker cannot run from file://. Serve the app over http:// or https:// (for example with `pnpm --filter web dev` or `pnpm --filter web preview`).",
+          logs: [],
         }
-        window.clearTimeout(timeout)
-        worker.removeEventListener("message", listener)
-        resolve(event.data.result)
       }
-      worker.addEventListener("message", listener)
-      worker.postMessage(request)
-    }).catch((error): PrometheusResult => {
+
+      if (!worker) {
+        worker = createWorker()
+      }
+
+      return new Promise<PrometheusResult>((resolve, reject) => {
+        let settled = false
+        const settle = (callback: () => void) => {
+          if (settled) {
+            return
+          }
+          settled = true
+          window.clearTimeout(timeout)
+          worker?.removeEventListener("message", listener)
+          pendingWorkerRejectsRef.current.delete(rejectRequest)
+          callback()
+        }
+        const rejectRequest = (error: Error) => settle(() => reject(error))
+        const timeout = window.setTimeout(() => {
+          rejectRequest(new Error("Worker timed out before returning a result."))
+        }, WORKER_TIMEOUT_MS)
+
+        const listener = (event: MessageEvent<WorkerResponse>) => {
+          const response = event.data
+          if (response.id !== request.id) {
+            return
+          }
+          if (response.type === "log") {
+            setLogs((current) => [...current, response.log])
+            return
+          }
+          if (response.type !== "result") {
+            return
+          }
+          settle(() => resolve(response.result))
+        }
+        pendingWorkerRejectsRef.current.add(rejectRequest)
+        worker?.addEventListener("message", listener)
+        worker?.postMessage(request)
+      }).catch((error): PrometheusResult => {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          logs: [],
+        }
+      })
+    } catch (error) {
       return {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
         logs: [],
       }
-    })
+    }
+  }
 
-    setIsRunning(false)
-    setLogs(result.logs)
-    if (result.ok) {
-      setOutput(result.output)
-      setSeed(createSeed())
-      toast.success("Obfuscation complete")
-    } else {
+  async function obfuscate(override?: {
+    sharedOutputHash?: string | null
+    options?: {
+      source: string
+      preset: PresetName
+      luaVersion: LuaVersion
+      prettyPrint: boolean
+      seed: number
+    }
+  }) {
+    if (isBusy && !override) {
+      return
+    }
+
+    setActiveJob("obfuscate")
+    try {
+      setLogs([])
+      const id = ++requestIdRef.current
+      const options = override?.options ?? { source, preset, luaVersion, prettyPrint, seed }
+      const request: WorkerRequest = {
+        id,
+        action: "obfuscate",
+        options: {
+          source: options.source,
+          filename: "browser-input.lua",
+          preset: options.preset,
+          luaVersion: options.luaVersion,
+          prettyPrint: options.prettyPrint,
+          seed: options.seed,
+        },
+      }
+
+      const result = await sendWorkerRequest(request)
+      setLogs(result.logs)
+
+      if (result.ok) {
+        const outputHash = await sha256Hex(result.output)
+        setLastObfuscation({
+          source: options.source,
+          preset: options.preset,
+          luaVersion: options.luaVersion,
+          prettyPrint: options.prettyPrint,
+          seed: options.seed,
+          outputHash,
+        })
+        setOutput(result.output)
+        setSeed(createSeed())
+        if (typeof override?.sharedOutputHash === "string") {
+          if (outputHash !== override.sharedOutputHash) {
+            setOutput("")
+            setLogs((current) => [
+              ...current,
+              {
+                level: "error",
+                message:
+                  "This shared link was generated using an older version of Prometheus and no longer produces the intended obfuscated result.",
+              },
+            ])
+            toast.error("Shared link hash mismatch")
+            return
+          }
+          toast.success("Shared link loaded")
+          return
+        }
+        toast.success("Obfuscation complete")
+        return
+      }
+
+      setLastObfuscation({
+        source: options.source,
+        preset: options.preset,
+        luaVersion: options.luaVersion,
+        prettyPrint: options.prettyPrint,
+        seed: options.seed,
+        outputHash: null,
+      })
       setOutput("")
       setLogs([...result.logs, { level: "error", message: result.error }])
       toast.error("Obfuscation failed")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOutput("")
+      setLogs((current) => [...current, { level: "error", message }])
+      toast.error("Obfuscation failed")
+    } finally {
+      setActiveJob("idle")
     }
+  }
+
+  async function shareLink() {
+    if (!lastObfuscation) {
+      return
+    }
+
+    const payload: SharePayload = {
+      version: 1,
+      source: lastObfuscation.source,
+      preset: lastObfuscation.preset,
+      luaVersion: lastObfuscation.luaVersion,
+      prettyPrint: lastObfuscation.prettyPrint,
+      seed: lastObfuscation.seed,
+      outputHash: lastObfuscation.outputHash,
+    }
+    const encoded = encodeBase64Url(JSON.stringify(payload))
+    const shareUrl = new URL(window.location.href)
+    shareUrl.searchParams.set("share", encoded)
+    window.history.replaceState({}, "", shareUrl)
+    await navigator.clipboard.writeText(shareUrl.toString())
+    toast.success("Share link copied")
+  }
+
+  async function runScript(kind: "input" | "output") {
+    if (isBusy) {
+      return
+    }
+
+    const script = kind === "input" ? source : output
+    if (!script.trim()) {
+      setLogs([{ level: "warn", message: `No ${kind} script to run.` }])
+      return
+    }
+
+    setActiveJob(kind === "input" ? "run-input" : "run-output")
+    setLogs([])
+    const id = ++requestIdRef.current
+    const request: WorkerRequest = {
+      id,
+      action: "runScript",
+      source: script,
+      filename: kind === "input" ? "browser-input.lua" : "browser-output.lua",
+    }
+
+    const result = await sendWorkerRequest(request)
+    setActiveJob("idle")
+
+    if (result.ok) {
+      setLogs((current) => {
+        if (current.length > 0) {
+          return current
+        }
+        if (result.logs.length > 0) {
+          return result.logs
+        }
+        return [{ level: "info", message: "Script finished without output." }]
+      })
+      toast.success("Script execution complete")
+      return
+    }
+
+    setLogs([...result.logs, { level: "error", message: result.error }])
+    toast.error("Script execution failed")
   }
 
   async function copyOutput() {
@@ -219,9 +420,64 @@ export default function App() {
     window.setTimeout(() => setCopied(false), 1200)
   }
 
+  useEffect(() => {
+    if (autoShareLoadedRef.current || isBusy) {
+      return
+    }
+
+    const encoded = new URL(window.location.href).searchParams.get("share")
+    if (!encoded) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      autoShareLoadedRef.current = true
+      let payload: SharePayload | null = null
+      try {
+        payload = JSON.parse(decodeBase64Url(encoded)) as SharePayload
+      } catch {
+        setLogs([{ level: "error", message: "Invalid shared link payload." }])
+        toast.error("Invalid shared link")
+        return
+      }
+
+      if (
+        payload.version !== 1 ||
+        !PRESETS.includes(payload.preset) ||
+        !LUA_VERSIONS.includes(payload.luaVersion) ||
+        typeof payload.source !== "string" ||
+        typeof payload.prettyPrint !== "boolean" ||
+        typeof payload.seed !== "number" ||
+        (typeof payload.outputHash !== "string" && payload.outputHash !== null)
+      ) {
+        setLogs([{ level: "error", message: "Invalid shared link payload." }])
+        toast.error("Invalid shared link")
+        return
+      }
+
+      setSource(payload.source)
+      setPreset(payload.preset)
+      setLuaVersion(payload.luaVersion)
+      setPrettyPrint(payload.prettyPrint)
+      setSeed(Math.max(1, Math.floor(payload.seed)))
+      void obfuscate({
+        sharedOutputHash: payload.outputHash,
+        options: {
+          source: payload.source,
+          preset: payload.preset,
+          luaVersion: payload.luaVersion,
+          prettyPrint: payload.prettyPrint,
+          seed: payload.seed,
+        },
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [isBusy])
+
   return (
     <TooltipProvider>
-      <main className="flex min-h-screen flex-col">
+      <main className="flex h-screen min-h-0 flex-col overflow-hidden">
         <header className="border-b bg-card">
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
@@ -246,9 +502,16 @@ export default function App() {
                 GitHub
                 <Github className="size-3.5" />
               </a>
-              <Button onClick={obfuscate} disabled={isRunning} className="min-w-32">
-                {isRunning ? <Loader2 className="animate-spin" /> : <Play />}
-                Obfuscate
+              <a
+                href={docsHref}
+                className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                Docs
+                <BookText className="size-3.5" />
+              </a>
+              <Button onClick={isObfuscating ? stopCurrentJob : () => void obfuscate()} disabled={isBusy && !isObfuscating} className="min-w-32">
+                {isObfuscating ? <Loader2 className="animate-spin" /> : <Play />}
+                {isObfuscating ? "Stop" : "Obfuscate"}
               </Button>
             </div>
           </div>
@@ -259,7 +522,7 @@ export default function App() {
             <div className="space-y-1.5">
               <Label>Preset</Label>
               <Select value={preset} onValueChange={(value) => setPreset(value as PresetName)}>
-                <SelectTrigger>
+                <SelectTrigger disabled={isBusy}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -274,7 +537,7 @@ export default function App() {
             <div className="space-y-1.5">
               <Label>Lua Version</Label>
               <Select value={luaVersion} onValueChange={(value) => setLuaVersion(value as LuaVersion)}>
-                <SelectTrigger>
+                <SelectTrigger disabled={isBusy}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -287,7 +550,7 @@ export default function App() {
               </Select>
             </div>
             <div className="flex h-10 items-center gap-2 self-end rounded-md border bg-card px-3">
-              <Switch checked={prettyPrint} onCheckedChange={setPrettyPrint} id="pretty-print" />
+              <Switch checked={prettyPrint} onCheckedChange={setPrettyPrint} id="pretty-print" disabled={isBusy} />
               <Label htmlFor="pretty-print" className="text-sm">
                 Pretty print
               </Label>
@@ -300,11 +563,12 @@ export default function App() {
                   type="number"
                   min={1}
                   value={seed}
+                  disabled={isBusy}
                   onChange={(event) => setSeed(Math.max(1, Number(event.target.value) || 1))}
                 />
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={() => setSeed(createSeed())} aria-label="Generate seed">
+                    <Button variant="outline" size="icon" onClick={() => setSeed(createSeed())} disabled={isBusy} aria-label="Generate seed">
                       <RotateCcw />
                     </Button>
                   </TooltipTrigger>
@@ -329,14 +593,44 @@ export default function App() {
                 </TooltipTrigger>
                 <TooltipContent>Download output</TooltipContent>
               </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={shareLink} disabled={!lastObfuscation} aria-label="Share link">
+                    <Share2 />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Share link</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </section>
 
-        <section className="mx-auto grid min-h-[620px] w-full max-w-[1600px] flex-1 gap-3 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_340px]">
-          <CodeEditor label="Lua input" value={source} onChange={setSource} />
-          <CodeEditor label="Obfuscated output" value={output} readOnly />
-          <aside className="flex min-h-[240px] flex-col rounded-md border bg-card">
+        <section className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 gap-3 overflow-hidden px-4 py-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_340px]">
+          <CodeEditor
+            label="Lua input"
+            value={source}
+            onChange={setSource}
+            className="max-h-[560px] xl:max-h-none"
+            actionButton={{
+              label: isRunningInput ? "Stop" : "Run",
+              icon: isRunningInput ? <Square /> : <Play />,
+              onClick: isRunningInput ? stopCurrentJob : () => runScript("input"),
+              disabled: isBusy && !isRunningInput,
+            }}
+          />
+          <CodeEditor
+            label="Obfuscated output"
+            value={output}
+            readOnly
+            className="max-h-[560px] xl:max-h-none"
+            actionButton={{
+              label: isRunningOutput ? "Stop" : "Run",
+              icon: isRunningOutput ? <Square /> : <Play />,
+              onClick: isRunningOutput ? stopCurrentJob : () => runScript("output"),
+              disabled: isBusy && !isRunningOutput,
+            }}
+          />
+          <aside className="flex min-h-0 min-w-0 max-h-[280px] flex-col overflow-hidden rounded-md border bg-card xl:max-h-none">
             <div className="px-3 py-2 text-xs font-medium text-muted-foreground">Logs</div>
             <Separator />
             <ScrollArea className="min-h-0 flex-1">
