@@ -9,7 +9,7 @@
 <br/>
 
 <a href="https://prometheus-lua.github.io/Prometheus/">
-  <img src="https://img.shields.io/badge/Prometheus%20Web-Try%20Out-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Web UI" />
+  <img src="https://img.shields.io/badge/Prometheus%20Web-Try%20Out-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
 </a>
 <a href="https://github.com/prometheus-lua/Prometheus/actions/workflows/Test.yml">
   <img src="https://img.shields.io/github/actions/workflow/status/prometheus-lua/Prometheus/Test.yml?branch=master&style=for-the-badge&label=Tests" alt="Tests" />
@@ -50,7 +50,7 @@ Try the browser version first:
 
 
 <a href="https://prometheus-lua.github.io/Prometheus/">
-  <img src="https://img.shields.io/badge/Prometheus%20Web-Open-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Web UI" />
+  <img src="https://img.shields.io/badge/Prometheus%20Web-Open-0F766E?style=for-the-badge&logo=github&logoColor=white" alt="Open Prometheus Playground" />
 </a>
 
 ### Install CLI (Linux/macOS)

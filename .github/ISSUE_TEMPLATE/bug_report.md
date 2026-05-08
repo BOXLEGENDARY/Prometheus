@@ -17,7 +17,7 @@ A clear and concise description of what you expected to happen.
 Steps to reproduce the behavior:
 
 Please include:
-- A **minimal reproducible example** shared via the Prometheus Web playground: https://prometheus-lua.github.io/Prometheus/
+- A **minimal reproducible example** shared via the Prometheus Playground: https://prometheus-lua.github.io/Prometheus/
 - Your config (preset/custom config)
 - The produced output (or relevant excerpt/error)
 

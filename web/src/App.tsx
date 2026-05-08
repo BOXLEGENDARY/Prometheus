@@ -485,7 +485,7 @@ export default function App() {
                 <FileCode2 className="size-5" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold leading-tight">Prometheus Web</h1>
+                <h1 className="text-lg font-semibold leading-tight">Prometheus Playground</h1>
                 <p className="text-xs text-muted-foreground">
                   In-browser Lua obfuscation powered by Prometheus by levno-710.
                 </p>
