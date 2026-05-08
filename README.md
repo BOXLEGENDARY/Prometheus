@@ -138,6 +138,8 @@ You can find the full documentation, including the getting started guide, here:
   </a>
 </p>
 
+Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ---
 
 ### Requirements
